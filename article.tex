@@ -1,28 +1,44 @@
 % !TEX program = xelatex
-% Шаблон научной статьи НИТУ «МИСиС»
-% Заполните блоки ниже и скомпилируйте: xelatex article.tex
+% Статья: Сплайновая модель траектории камеры для генерации синтетических
+% инерциальных измерений в задачах визуально-инерциальной навигации.
+% Сборка: tectonic -o build article.tex  (или make article)
 
 \documentclass{misisarticle}
 
-% --- Классификационные коды (оставьте пустым {}, если не требуются) ---
-\grnti{47.01.07, 47.01.09}
-\asjc{1707, 2207}
-\oecd{1020, 1070}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% --- Обозначения ---
+\newcommand{\Exp}{\operatorname{Exp}}
+\newcommand{\Log}{\operatorname{Log}}
+\newcommand{\cross}[1]{[#1]_{\times}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\SO}{\mathrm{SO}(3)}
+\newcommand{\T}{^{\mathsf{T}}}
+\newcommand{\vb}[1]{\mathbf{#1}}
+
+% --- Классификационные коды ---
+\grnti{27.41.17, 28.17.19}
+\asjc{2605, 2612}
+\oecd{1.1}
 
 % --- Название ---
-\title{Название вашей научной статьи}
+\title{Сплайновая модель траектории камеры для генерации синтетических инерциальных измерений в задачах визуально-инерциальной навигации}
 
-% --- Авторы: \misisauthor{ФИО}{аффилиация}{город, страна}{email} ---
-\misisauthor{И.~О.~Фамилия}{кафедра инженерной кибернетики НИТУ «МИСиС»}{Москва, Россия}{student@edu.misis.ru}
-\misisauthor{П.~П.~Научный}{кафедра инженерной кибернетики НИТУ «МИСиС»}{Москва, Россия}{supervisor@misis.ru}
+% --- Авторы ---
+% TODO: вписать отчество (инициалы) и рабочие адреса почты.
+\misisauthor{К.~Егорова}{кафедра инженерной кибернетики НИТУ «МИСиС»}{Москва, Россия}{student@edu.misis.ru}
+\misisauthor{В.~В.~Семёнов}{кафедра инженерной кибернетики НИТУ «МИСиС»}{Москва, Россия}{supervisor@misis.ru}
 
 % --- Аннотация и ключевые слова ---
 \abstract{%
-  Краткое изложение работы (5--10 предложений): постановка задачи, метод, основные результаты и выводы.
+  Для проверки алгоритмов визуально-инерциальной навигации нужны наборы данных, в которых точно известна траектория движения. В реальных экспериментах получить такие данные сложно, поэтому их часто создают искусственно. При этом достоверность синтетических показаний датчиков зависит от того, как задано движение камеры. Если траекторию задавать отрезками прямых, а повороты~--- последовательной сферической интерполяцией, ускорение и угловая скорость в точках стыка меняются скачком, чего не бывает при реальном движении. В работе показано, какие требования к модели движения следуют из принципа работы датчиков: акселерометр измеряет ускорение, то есть вторую производную положения, а гироскоп~--- угловую скорость, то есть первую производную ориентации. Дополнительное требование возникает из-за того, что камера и инерциальный датчик расположены в разных точках: в ускорение датчика входит угловое ускорение камеры, поэтому дважды непрерывно дифференцируемой должна быть и ориентация. С учётом этих требований положение задаётся кубическим B-сплайном, а ориентация~--- кумулятивным кубическим B-сплайном на группе вращений, что позволяет вычислять ускорение, угловую скорость и угловое ускорение точно, без численного дифференцирования. Показания датчиков формируются с учётом силы тяжести, шума и дрейфа смещений. Предложена методика проверки модели: траектория восстанавливается обратным интегрированием полученных измерений и сравнивается с исходной; исследуется зависимость ошибки восстановления от шага по времени и уровня шума, а также сравниваются рассмотренные способы интерполяции.
 }
 
 \keywords{%
-  ключевое слово 1, ключевое слово 2, ключевое слово 3
+  визуально-инерциальная навигация, SLAM, инерциальный измерительный блок (IMU), сплайн-интерполяция, синтетические данные
 }
 
 \begin{document}
@@ -32,71 +48,309 @@
 % ============================================================
 \section{Введение}
 
-Первый абзац раздела начинается с красной строки (отступ 0{,}51~см). Текст выравнивается по ширине, шрифт Times New Roman, 10~pt.
+Визуально-инерциальная навигация (VIO) и визуально-инерциальный SLAM оценивают движение камеры, совместно обрабатывая изображения и показания инерциального измерительного блока (IMU), который состоит из трёхосевого акселерометра и трёхосевого гироскопа. Такие системы, например VINS-Mono~\cite{vinsmono}, ORB-SLAM3~\cite{orbslam3} и OpenVINS~\cite{openvins}, используются на мобильных роботах и беспилотных летательных аппаратах. Чтобы сравнивать алгоритмы между собой и находить в них ошибки, нужны наборы данных, в которых известна истинная (эталонная) траектория.
 
-Второй абзац. Ссылки на литературу оформляйте так~\cite{example2024}. Для нескольких источников:~\cite{example2024, book2023}.
+Открытые наборы EuRoC~\cite{euroc} и TUM VI~\cite{tumvi} записаны на реальных платформах, а эталон получен внешней системой захвата движения. У такого подхода есть ограничения: эталон доступен только в пределах помещения с системой захвата, сам содержит погрешность, а параметры эксперимента (характер движения, уровень шума датчиков, взаимное расположение камеры и IMU) зафиксированы и не могут меняться независимо друг от друга. Синтетические данные этих ограничений лишены: траектория задаётся программно и известна точно, а любые параметры можно варьировать по отдельности.
 
-% ============================================================
-\section{Основная часть}
+Синтетические данные полезны, только если показания датчиков согласованы с заданным движением. Акселерометр измеряет удельную силу, то есть ускорение за вычетом силы тяжести~--- вторую производную положения; гироскоп измеряет угловую скорость~--- первую производную ориентации~\cite{woodman}. Значит, модель траектории должна иметь нужное число непрерывных производных, и эти производные должны вычисляться точно. Самый простой способ задать движение по набору ключевых поз~--- соединить положения отрезками, а ориентации интерполировать сферически (SLERP~\cite{shoemake})~--- этому требованию не удовлетворяет: в узлах скорость и угловая скорость меняются скачком, а ускорение внутри отрезков равно нулю. Синтетический акселерометр в этом случае <<не видит>> поворотов траектории.
 
-\subsection{Подраздел}
-
-Подзаголовки второго уровня набираются \textit{курсивом}.
-
-Пример маркированного списка:
+Вклад работы методический. Новый алгоритм навигации не предлагается; в работе:
 \begin{itemize}
-  \item первый пункт;
-  \item второй пункт;
-  \item третий пункт.
+  \item сформулированы требования к гладкости модели движения, которые следуют из модели измерений IMU и из того, что камера и IMU расположены в разных точках; показано, что из-за смещения между ними дважды непрерывно дифференцируемой должна быть не только траектория положения, но и ориентация;
+  \item описан генератор синтетических измерений IMU на основе кубических B-сплайнов в $\R^3$ и на $\SO$ с аналитическими выражениями для скорости, ускорения, угловой скорости и углового ускорения;
+  \item предложена методика проверки согласованности модели обратным интегрированием и сравнения трёх способов интерполяции.
 \end{itemize}
 
-Пример формулы в строке: мера Жаккара $IoU = \dfrac{|A \cap B|}{|A \cup B|}$.
+Работа является частью выпускной квалификационной работы, посвящённой генерации синтетических визуально-инерциальных данных. Построенная здесь траектория далее используется для рендеринга изображений сцены, реконструированной методом гауссова сплаттинга~\cite{kerbl}. Поскольку изображения и показания IMU получаются из одной и той же непрерывной траектории, они согласованы по времени и движению по построению.
 
-Нумерованная формула (ссылка в тексте: формула~\eqref{eq:f1}):
-\begin{equation}
-  F_1 = 2 \cdot \frac{P \cdot R}{P + R}
-       = \frac{2TP}{2TP + FP + FN},
-  \label{eq:f1}
-\end{equation}
-где $P$~--- precision, $R$~--- recall, $TP$, $FP$, $FN$~--- число истинно и ложно положительных/отрицательных детекций.
+% ============================================================
+\section{Анализ работ}
 
-% --- Рисунок ---
+\subsection{Наборы данных и оценка траекторий}
+
+Набор EuRoC~\cite{euroc} содержит стереоизображения и показания IMU с беспилотника и эталон от лазерного трекера или системы захвата движения; TUM VI~\cite{tumvi} дополнительно предоставляет фотометрическую калибровку и записи в разных условиях. Стандартные метрики точности~--- абсолютная ошибка траектории (ATE) и относительная ошибка позы (RPE)~--- введены в~\cite{sturm}, а особенности их применения к визуально-инерциальным системам, в том числе выбор способа совмещения оценки с эталоном, разобраны в~\cite{zhang}. В рамках сборника МИСИС близкие задачи рассматривались в работах, посвящённых замыканию цикла в лидарной одометрии~\cite{epifanov} и восстановлению трёхмерного облака точек методами стереозрения~\cite{ermolenko}. Для оценки алгоритмов одометрии также нужна эталонная траектория, а восстановление геометрии сцены в нашей ВКР выполняется гауссовым сплаттингом~\cite{kerbl}, который служит источником синтетических изображений.
+
+\subsection{Непрерывные представления траектории}
+
+В задачах слияния данных с датчиков, работающих с разной частотой, траекторию удобно задавать как непрерывную функцию времени. В~\cite{furgale} траектория представлена B-сплайном, что позволило совместно калибровать пространственное положение датчиков и смещение их временных шкал (метод реализован в пакете Kalibr). В~\cite{lovegrove, patronperez} предложено представлять траекторию кумулятивным кубическим B-сплайном на группе $\mathrm{SE}(3)$; конструкция кумулятивного базиса восходит к работе~\cite{kim}, где она построена для кватернионов. Такое представление позволяет моделировать камеры со скользящим затвором и аналитически вычислять производные, нужные для сравнения с показаниями IMU. Непрерывное представление применяется и в визуально-инерциальной одометрии для событийных камер~\cite{mueggler}. В~\cite{sommer} получены рекуррентные формулы для угловой скорости и углового ускорения кумулятивного B-сплайна на группах Ли, вычислительная сложность которых линейна по порядку сплайна; эти формулы используются в разделе~IV.
+
+Генерация синтетических данных по сплайновой траектории реализована, например, в симуляторе платформы OpenVINS~\cite{openvins}, где по заданной траектории строится сплайн на $\mathrm{SE}(3)$ и по нему формируются измерения. В перечисленных работах сплайн используется прежде всего как инструмент оценивания, а обоснование выбора модели движения именно для генерации данных и сравнение с более простыми способами интерполяции обычно не приводятся. Этот вопрос и рассматривается в настоящей работе.
+
+\subsection{Интерполяция ориентаций}
+
+Для интерполяции вращений Шумейк~\cite{shoemake} ввёл сферическую линейную интерполяцию кватернионов SLERP и её кубический аналог SQUAD. SLERP даёт постоянную угловую скорость на каждом отрезке и её скачки в узлах. SQUAD обеспечивает непрерывность угловой скорости, но не углового ускорения. Соглашения о кватернионах (порядок компонент, правое или левое умножение, направление поворота) различаются между библиотеками и наборами данных; в работе используются соглашения, описанные в~\cite{sola}.
+
+Требования гладкости к траектории возникают и в задачах планирования движения, где траектория должна удовлетворять кинематическим ограничениям робота, например при планировании движения мобильных манипуляторов~\cite{ly}. В нашей задаче роль таких ограничений играют требования, следующие из модели измерений датчиков.
+
+% ============================================================
+\section{Постановка задачи}
+
+\subsection{Системы координат и модель измерений}
+
+Используются три правые системы координат (рис.~\ref{fig:frames}): мировая $W$ (ось $z$ направлена вверх), система IMU $B$ и система камеры $C$. Поза системы $B$ в $W$ задаётся вращением $R_{WB}(t)\in\SO$ и положением $\vb p_{WB}(t)\in\R^3$, поза камеры~--- парой $R_{WC}(t)$, $\vb p_{WC}(t)$. Камера и IMU жёстко связаны; их взаимное положение задано постоянными $R_{BC}$ и $\vb p_{BC}$ (внешняя калибровка). Ускорение свободного падения $\vb g_W=(0,0,-9{,}81)\T$~м/с$^2$.
+
 \begin{figure}[htbp]
   \centering
-  % Замените заглушку на свой файл:
-  % \includegraphics[width=0.75\linewidth]{figures/figure}
-  \fbox{\parbox[c][3cm][c]{0.9\columnwidth}{\centering Placeholder для рисунка}}
-  \caption{Пример иллюстрации. Замените заглушку на свой файл из папки figures.}
-  \label{fig:example}
+  \begin{tikzpicture}[>=Stealth, scale=0.9, every node/.style={font=\small}]
+    % мир
+    \draw[->, thick] (0,0) -- (1.0,0) node[below] {$x$};
+    \draw[->, thick] (0,0) -- (0,1.0) node[left] {$z$};
+    \draw[->, thick] (0,0) -- (-0.55,-0.45) node[left] {$y$};
+    \node[below] at (0.45,-0.05) {$W$};
+    % траектория
+    \draw[gray, dashed, thick] (0.6,1.6) .. controls (2.0,3.2) and (4.0,0.6) .. (6.6,2.2)
+      node[right, black] {$\vb p_{WC}(t)$};
+    % IMU
+    \coordinate (B) at (3.0,1.85);
+    \draw[->, thick, blue] (B) -- ++(0.7,-0.3);
+    \draw[->, thick, blue] (B) -- ++(-0.2,0.75);
+    \node[blue, below] at (B) {$B$};
+    % камера
+    \coordinate (C) at (4.4,2.85);
+    \draw[->, thick, red] (C) -- ++(0.7,-0.15);
+    \draw[->, thick, red] (C) -- ++(0.15,0.7);
+    \node[red, left] at (C) {$C$};
+    % рычаг
+    \draw[->, thick] (B) -- (C) node[pos=0.55, below right] {$\vb p_{BC}$};
+    % радиус-вектор
+    \draw[->, thin] (0,0) -- (B) node[midway, above left] {$\vb p_{WB}$};
+  \end{tikzpicture}
+  \caption{Системы координат: мировая $W$, IMU $B$ и камеры $C$. Камера смещена относительно IMU на вектор $\vb p_{BC}$.}
+  \label{fig:frames}
 \end{figure}
 
-% --- Таблица ---
-\begin{table}[htbp]
-  \caption{Пример таблицы с результатами}
-  \label{tab:example}
+Угловая скорость в системе $B$ определяется соотношением $\cross{\boldsymbol\omega_B}=R_{WB}\T\dot R_{WB}$, где $\cross{\cdot}$~--- кососимметрическая матрица векторного произведения. Модель измерений гироскопа и акселерометра~\cite{forster, furgale}:
+\begin{align}
+  \tilde{\boldsymbol\omega}(t) &= \boldsymbol\omega_B(t) + \vb b_g(t) + \boldsymbol\eta_g(t), \label{eq:gyro}\\
+  \tilde{\vb a}(t) &= R_{WB}\T(t)\bigl(\ddot{\vb p}_{WB}(t)-\vb g_W\bigr) + \vb b_a(t) + \boldsymbol\eta_a(t), \label{eq:acc}
+\end{align}
+где $\boldsymbol\eta_g$, $\boldsymbol\eta_a$~--- белый шум с плотностями $\sigma_g$, $\sigma_a$, а смещения нулей $\vb b_g$, $\vb b_a$ меняются как случайное блуждание: $\dot{\vb b}_g=\boldsymbol\eta_{bg}$, $\dot{\vb b}_a=\boldsymbol\eta_{ba}$ с плотностями $\sigma_{bg}$, $\sigma_{ba}$. Параметры шума обычно определяют по дисперсии Аллана~\cite{ieee952}.
+
+\subsection{Связь движения камеры и IMU}
+
+Ключевые позы задаются для камеры: именно её положение определяет, какие изображения сцены будут получены. Поза IMU выражается через позу камеры:
+\begin{equation}
+  R_{WB}=R_{WC}R_{BC}\T,\qquad
+  \vb p_{WB}=\vb p_{WC}+R_{WC}\,\vb r,
+  \label{eq:lever}
+\end{equation}
+где $\vb r=-R_{BC}\T\vb p_{BC}$~--- положение IMU в системе камеры. Дважды дифференцируя~\eqref{eq:lever} и учитывая $\ddot R_{WC}=R_{WC}\bigl(\cross{\boldsymbol\alpha_C}+\cross{\boldsymbol\omega_C}^2\bigr)$, получаем
+\begin{align}
+  \ddot{\vb p}_{WB} &= \ddot{\vb p}_{WC}
+     + R_{WC}\bigl(\boldsymbol\alpha_C\times\vb r
+     + \boldsymbol\omega_C\times(\boldsymbol\omega_C\times\vb r)\bigr), \label{eq:accB}\\
+  \boldsymbol\omega_B &= R_{BC}\,\boldsymbol\omega_C, \label{eq:omegaB}
+\end{align}
+где $\boldsymbol\omega_C$ и $\boldsymbol\alpha_C=\dot{\boldsymbol\omega}_C$~--- угловая скорость и угловое ускорение камеры в её собственной системе.
+
+\subsection{Требования к модели движения}
+
+Из \eqref{eq:gyro}--\eqref{eq:omegaB} следуют требования к модели траектории камеры $T_{WC}(t)=(R_{WC}(t),\vb p_{WC}(t))$:
+\begin{enumerate}
+  \item[Т1.] $\vb p_{WC}\in C^2$: акселерометр измеряет $\ddot{\vb p}$, и его показания не должны содержать скачков и импульсов, вызванных лишь способом задания траектории;
+  \item[Т2.] $R_{WC}\in C^1$: гироскоп измеряет $\boldsymbol\omega$;
+  \item[Т3.] $R_{WC}\in C^2$ при $\vb r\neq 0$: согласно~\eqref{eq:accB} в показания акселерометра входит угловое ускорение $\boldsymbol\alpha_C$;
+  \item[Т4.] производные $\dot{\vb p}$, $\ddot{\vb p}$, $\boldsymbol\omega$, $\boldsymbol\alpha$ вычисляются аналитически, без конечных разностей, чтобы погрешность дифференцирования не смешивалась с моделируемым шумом датчиков.
+\end{enumerate}
+Требование Т3 легко упустить: если сплайн задан для самой системы IMU, то для ускорения IMU достаточно Т1 и Т2. Однако ключевые позы задаются для камеры (а эталонные траектории из открытых наборов данных~--- для одного из датчиков), и пересчёт~\eqref{eq:accB} требует $\boldsymbol\alpha_C$. Требование $R\in C^2$ делает модель независимой от того, к какой из жёстко связанных систем привязан сплайн.
+
+\subsection{Формулировка задачи}
+
+Дано: ключевые позы камеры $\{(t_k, R_k, \vb p_k)\}_{k=0}^{K}$ на равномерной сетке с шагом $\Delta t$; внешняя калибровка $(R_{BC},\vb p_{BC})$; частота IMU $f=1/h$; параметры шума $\sigma_g,\sigma_a,\sigma_{bg},\sigma_{ba}$. Требуется построить непрерывную траекторию $T_{WC}(t)$, удовлетворяющую Т1--Т4, и последовательности измерений $\{\tilde{\boldsymbol\omega}_n,\tilde{\vb a}_n\}$ в моменты $t_n=t_0+nh$ согласно~\eqref{eq:gyro}--\eqref{eq:acc}. Согласованность модели оценивается ошибкой восстановления траектории по этим измерениям (раздел~IV-Е).
+
+% ============================================================
+\section{Описание методов}
+
+\subsection{Положение: кубический B-сплайн}
+
+На отрезке $t\in[t_i,t_{i+1})$ введём $u=(t-t_i)/\Delta t\in[0,1)$. Равномерный кубический B-сплайн с контрольными точками $\vb P_i,\dots,\vb P_{i+3}$ записывается в матричной форме~\cite{patronperez}:
+\begin{equation}
+  \vb p(u)=\vb P\,M\,\vb u,\quad
+  \vb u=\begin{pmatrix}1\\u\\u^2\\u^3\end{pmatrix},
+  \label{eq:pos}
+\end{equation}
+где $\vb P=(\vb P_i\;\vb P_{i+1}\;\vb P_{i+2}\;\vb P_{i+3})$ и
+\begin{equation*}
+  M=\frac16\begin{pmatrix}
+    1 & -3 & 3 & -1\\
+    4 & 0 & -6 & 3\\
+    1 & 3 & 3 & -3\\
+    0 & 0 & 0 & 1
+  \end{pmatrix}.
+\end{equation*}
+Производные по времени получаются дифференцированием $\vb u$: $\dot{\vb p}=\Delta t^{-1}\vb P M(0,1,2u,3u^2)\T$, $\ddot{\vb p}=\Delta t^{-2}\vb P M(0,0,2,6u)\T$. Кубический B-сплайн принадлежит классу $C^2$ на всей области определения, то есть удовлетворяет Т1.
+
+\subsection{Ориентация: кумулятивный B-сплайн на $\SO$}
+
+Сумму $\sum_j B_j(u)\vb P_j$ можно переписать через разности соседних контрольных точек с кумулятивными базисными функциями $\tilde B_j(u)=\sum_{l\ge j}B_l(u)$. Для вращений сложение заменяется умножением, а разность~--- логарифмом~\cite{kim, lovegrove}:
+\begin{equation}
+  R(u)=Q_i\prod_{j=1}^{3}\Exp\bigl(\tilde B_j(u)\,\vb d_j\bigr),\quad
+  \vb d_j=\Log\bigl(Q_{i+j-1}\T Q_{i+j}\bigr),
+  \label{eq:rot}
+\end{equation}
+где $Q_i,\dots,Q_{i+3}$~--- контрольные вращения, $\Exp$ и $\Log$~--- экспоненциальное и логарифмическое отображения между $\R^3$ и $\SO$~\cite{sola}. Кумулятивные базисные функции (рис.~\ref{fig:basis}):
+\begin{equation}
+  \begin{gathered}
+    \tilde B_1=\tfrac16\bigl(5+3u-3u^2+u^3\bigr),\\
+    \tilde B_2=\tfrac16\bigl(1+3u+3u^2-2u^3\bigr),\quad
+    \tilde B_3=\tfrac16u^3.
+  \end{gathered}
+  \label{eq:cumbasis}
+\end{equation}
+
+\begin{figure}[htbp]
   \centering
-  \begin{tabular}{lcc}
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.95\columnwidth, height=4.2cm,
+      xmin=0, xmax=1, ymin=0, ymax=1.05,
+      xlabel={$u$}, ylabel={$\tilde B_j(u)$},
+      legend columns=3, legend style={at={(0.5,1.03)}, anchor=south, /tikz/every even column/.append style={column sep=6pt}, font=\scriptsize, draw=none, fill=none},
+      tick label style={font=\scriptsize}, label style={font=\small},
+      samples=60, domain=0:1, thick]
+      \addplot[black] {(5+3*x-3*x^2+x^3)/6};
+      \addplot[blue, dashed] {(1+3*x+3*x^2-2*x^3)/6};
+      \addplot[red, dotted, very thick] {x^3/6};
+      \legend{$\tilde B_1$, $\tilde B_2$, $\tilde B_3$}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Кумулятивные базисные функции кубического B-сплайна на одном отрезке ($\tilde B_0\equiv 1$).}
+  \label{fig:basis}
+\end{figure}
+
+Обозначим $A_j=\Exp(\tilde B_j\vb d_j)$ и $R^{(1)}=Q_i$, $R^{(j+1)}=R^{(j)}A_j$. Поскольку направление вектора $\tilde B_j\vb d_j$ не зависит от $t$, $A_j\T\dot A_j=\cross{\dot{\tilde B}_j\vb d_j}$. Отсюда угловая скорость в собственной системе вычисляется рекуррентно~\cite{sommer}:
+\begin{equation}
+  \boldsymbol\omega^{(1)}=0,\quad
+  \boldsymbol\omega^{(j+1)}=A_j\T\boldsymbol\omega^{(j)}+\dot{\tilde B}_j\vb d_j,
+  \label{eq:omega}
+\end{equation}
+а дифференцирование~\eqref{eq:omega} с учётом $\dot A_j\T=-\cross{\dot{\tilde B}_j\vb d_j}A_j\T$ даёт угловое ускорение:
+\begin{equation}
+  \boldsymbol\alpha^{(j+1)}=A_j\T\boldsymbol\alpha^{(j)}
+  +\bigl(A_j\T\boldsymbol\omega^{(j)}\bigr)\times\dot{\tilde B}_j\vb d_j
+  +\ddot{\tilde B}_j\vb d_j,
+  \label{eq:alpha}
+\end{equation}
+где $\boldsymbol\alpha^{(1)}=0$, $\dot{\tilde B}_j=\Delta t^{-1}\,d\tilde B_j/du$, $\ddot{\tilde B}_j=\Delta t^{-2}\,d^2\tilde B_j/du^2$. Искомые величины: $\boldsymbol\omega_C=\boldsymbol\omega^{(4)}$, $\boldsymbol\alpha_C=\boldsymbol\alpha^{(4)}$. Так как $\tilde B_j\in C^2$, а $\Exp$ гладко, вращение~\eqref{eq:rot} принадлежит $C^2$ и удовлетворяет Т2, Т3; формулы~\eqref{eq:omega}, \eqref{eq:alpha} обеспечивают Т4.
+
+\subsection{Выбор контрольных точек}
+
+B-сплайн в общем случае не проходит через свои контрольные точки. Для положения условие $\vb p(t_k)=\vb p_k$ при $u=0$ принимает вид $(\vb P_{k}+4\vb P_{k+1}+\vb P_{k+2})/6=\vb p_k$ и вместе с двумя краевыми условиями даёт трёхдиагональную линейную систему относительно $\vb P$. Для ориентации аналогичная задача нелинейна; в качестве начального приближения контрольным вращениям $Q_{k+1}$ присваиваются ключевые вращения $R_k$ (сдвиг индекса соответствует наибольшему весу $B_1(0)=2/3$), затем при необходимости они уточняются методом Гаусса--Ньютона по критерию $\sum_k\|\Log(R_k\T R(t_k))\|^2$.
+
+Точное прохождение через ключевые позы для генерации данных не обязательно: эталоном служит сама непрерывная траектория~\eqref{eq:pos}, \eqref{eq:rot}, и все измерения строятся из неё. Ключевые позы лишь задают характер движения. Если позы заданы на неравномерной сетке (например, эталон из открытого набора данных), они предварительно аппроксимируются на равномерной сетке.
+
+\subsection{Формирование измерений}
+
+В моменты $t_n$ по формулам \eqref{eq:pos}--\eqref{eq:alpha} вычисляются $R_{WC}$, $\ddot{\vb p}_{WC}$, $\boldsymbol\omega_C$, $\boldsymbol\alpha_C$, затем по~\eqref{eq:lever}--\eqref{eq:omegaB}~--- кинематика IMU, и по \eqref{eq:gyro}, \eqref{eq:acc}~--- идеальные измерения. Шум и смещения дискретизируются по стандартной схеме~\cite{furgale, forster}:
+\begin{equation}
+  \begin{gathered}
+    \boldsymbol\eta_{g,n}\sim\mathcal N\!\Bigl(0,\tfrac{\sigma_g^2}{h}I\Bigr),\quad
+    \boldsymbol\eta_{a,n}\sim\mathcal N\!\Bigl(0,\tfrac{\sigma_a^2}{h}I\Bigr),\\
+    \vb b_{n+1}=\vb b_n+\sigma_b\sqrt h\,\boldsymbol\xi_n,\quad
+    \boldsymbol\xi_n\sim\mathcal N(0,I),
+  \end{gathered}
+  \label{eq:noise}
+\end{equation}
+отдельно для гироскопа ($\sigma_{bg}$) и акселерометра ($\sigma_{ba}$). Параметры берутся из паспорта типового MEMS-датчика или из калибровочных файлов открытых наборов данных~\cite{euroc}. Изображения в ВКР рендерятся по тем же формулам~\eqref{eq:pos}, \eqref{eq:rot} в моменты кадров, поэтому визуальные и инерциальные данные описывают одно движение.
+
+\subsection{Методика проверки}
+
+\emph{Обратное интегрирование.} Начальное состояние $(R_0,\vb v_0,\vb p_0)$ системы $B$ берётся из сплайна, после чего траектория восстанавливается по измерениям:
+\begin{equation}
+  \begin{aligned}
+    \hat R_{n+1}&=\hat R_n\Exp\bigl((\tilde{\boldsymbol\omega}_n-\hat{\vb b}_g)h\bigr),\\
+    \hat{\vb a}_n&=\hat R_n(\tilde{\vb a}_n-\hat{\vb b}_a)+\vb g_W,\\
+    \hat{\vb v}_{n+1}&=\hat{\vb v}_n+\hat{\vb a}_n h,\quad
+    \hat{\vb p}_{n+1}=\hat{\vb p}_n+\hat{\vb v}_n h+\tfrac12\hat{\vb a}_n h^2.
+  \end{aligned}
+  \label{eq:integr}
+\end{equation}
+Схема~\eqref{eq:integr} имеет первый порядок; для исследования сходимости используется также схема Рунге--Кутты четвёртого порядка с измерениями в промежуточных точках, которые генератор позволяет получить в любой момент времени.
+
+\emph{Метрики.} Ошибка положения $e_p(t_n)=\|\hat{\vb p}_n-\vb p_{WB}(t_n)\|$ и ориентации $e_R(t_n)=\|\Log(\hat R_n\T R_{WB}(t_n))\|$, а также их среднеквадратичные значения по траектории (аналог ATE~\cite{sturm, zhang}). Совмещение оценки с эталоном не требуется: начальное состояние известно точно.
+
+\emph{Эксперименты.} Планируются три серии:
+\begin{enumerate}
+  \item без шума ($\sigma=0$, $\vb b=0$) при уменьшении шага $h$: при точных производных ошибка должна убывать как $O(h^q)$, где $q$~--- порядок схемы интегрирования; отклонение от этого закона указывает на рассогласование измерений и траектории;
+  \item с шумом и дрейфом смещений: зависимость ошибки от $\sigma_g$, $\sigma_a$, $\sigma_{bg}$, $\sigma_{ba}$, усреднённая по серии независимых реализаций шума;
+  \item сравнение трёх моделей движения, построенных по одним и тем же ключевым позам (табл.~\ref{tab:models}): кусочно-линейной с SLERP, кубического интерполяционного сплайна с SQUAD и предлагаемой модели на B-сплайнах.
+\end{enumerate}
+
+\begin{table}[htbp]
+  \caption{Свойства моделей движения: А~--- кусочно-линейная с SLERP, Б~--- кубический сплайн с SQUAD, В~--- B-сплайны}
+  \label{tab:models}
+  \centering
+  \small
+  \begin{tabular}{lccc}
     \toprule
-    \textbf{Метод} & \textbf{Precision} & \textbf{Recall} \\
+    \textbf{Свойство} & \textbf{А} & \textbf{Б} & \textbf{В} \\
     \toprule
-    Метод~A & 0.85 & 0.78 \\
-    Метод~B & 0.91 & 0.83 \\
+    Класс $\vb p(t)$ & $C^0$ & $C^2$ & $C^2$ \\
+    Класс $R(t)$ & $C^0$ & $C^1$ & $C^2$ \\
+    $\tilde{\boldsymbol\omega}$ в узлах & скачок & непр. & непр. \\
+    $\tilde{\vb a}$ в узлах & импульс & скачок$^{*}$ & непр. \\
+    $\vb p(t_k)=\vb p_k$ & да & да & да \\
+    $R(t_k)=R_k$ & да & да & прибл. \\
     \bottomrule
   \end{tabular}
+
+  \smallskip
+  {\footnotesize $^{*}$при $\vb r\neq0$; <<непр.>>~--- непрерывна.}
 \end{table}
+
+Для кусочно-линейной модели результат первой серии можно предсказать заранее. Внутри каждого отрезка $\ddot{\vb p}=0$, и, если моменты измерений не совпадают с узлами, акселерометр регистрирует только силу тяжести. Интегрирование~\eqref{eq:integr} сохраняет начальную скорость, и после первого узла ошибка положения растёт линейно со временем при любом шаге $h$. Ориентация при этом восстанавливается, поскольку угловая скорость кусочно постоянна. Модель с SQUAD сходится при $h\to0$, но при $\vb r\neq0$ скачки $\boldsymbol\alpha_C$ в узлах дают в показаниях акселерометра ступеньки, положение которых определяется расстановкой ключевых поз, а не самим движением. Количественная проверка этих выводов и предлагаемой модели~--- предмет экспериментальной части работы.
 
 % ============================================================
 \section{Заключение}
 
-Кратко сформулируйте основные выводы работы.
+Из модели измерений IMU выведены требования к гладкости модели движения камеры. Показано, что из-за смещения камеры относительно IMU в показания акселерометра входит угловое ускорение, поэтому дважды непрерывно дифференцируемой должна быть и ориентация. Этим требованиям удовлетворяет представление положения кубическим B-сплайном, а ориентации~--- кумулятивным кубическим B-сплайном на $\SO$; для него приведены аналитические выражения угловой скорости и углового ускорения. Описаны схема формирования синтетических измерений с шумом и дрейфом смещений и методика проверки обратным интегрированием. Дальнейшая работа~--- программная реализация генератора, проведение описанных экспериментов и использование траектории для рендеринга изображений сцены, восстановленной гауссовым сплаттингом.
 
 % ============================================================
-% Список литературы — вариант 1: вручную
-\begin{thebibliography}{9}
+\begin{thebibliography}{99}
 
-\bibitem{example2024} Author A., Author B. Title of the paper. \textit{Journal Name}, vol.~1, no.~2, pp.~100--110, 2024.
+\bibitem{vinsmono} Qin T., Li P., Shen S. VINS-Mono: A Robust and Versatile Monocular Visual-Inertial State Estimator // IEEE Transactions on Robotics. 2018. Vol.~34, No.~4. P.~1004--1020.
 
-\bibitem{book2023} Author C. \textit{Book Title}. Publisher, City, 2023.
+\bibitem{orbslam3} Campos C., Elvira R., Gómez Rodríguez J.J., Montiel J.M.M., Tardós J.D. ORB-SLAM3: An Accurate Open-Source Library for Visual, Visual-Inertial, and Multimap SLAM // IEEE Transactions on Robotics. 2021. Vol.~37, No.~6. P.~1874--1890.
+
+\bibitem{openvins} Geneva P., Eckenhoff K., Lee W., Yang Y., Huang G. OpenVINS: A Research Platform for Visual-Inertial Estimation // 2020 IEEE International Conference on Robotics and Automation (ICRA). Paris, 2020. P.~4666--4672.
+
+\bibitem{euroc} Burri M., Nikolic J., Gohl P., Schneider T., Rehder J., Omari S., Achtelik M.W., Siegwart R. The EuRoC Micro Aerial Vehicle Datasets // The International Journal of Robotics Research. 2016. Vol.~35, No.~10. P.~1157--1163.
+
+\bibitem{tumvi} Schubert D., Goll T., Demmel N., Usenko V., Stückler J., Cremers D. The TUM VI Benchmark for Evaluating Visual-Inertial Odometry // 2018 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Madrid, 2018. P.~1680--1687.
+
+\bibitem{woodman} Woodman O.J. An Introduction to Inertial Navigation: Technical Report UCAM-CL-TR-696. Cambridge: University of Cambridge, Computer Laboratory, 2007.
+
+\bibitem{shoemake} Shoemake K. Animating Rotation with Quaternion Curves // ACM SIGGRAPH Computer Graphics. 1985. Vol.~19, No.~3. P.~245--254.
+
+\bibitem{kerbl} Kerbl B., Kopanas G., Leimkühler T., Drettakis G. 3D Gaussian Splatting for Real-Time Radiance Field Rendering // ACM Transactions on Graphics. 2023. Vol.~42, No.~4. Art.~139.
+
+\bibitem{sturm} Sturm J., Engelhard N., Endres F., Burgard W., Cremers D. A Benchmark for the Evaluation of RGB-D SLAM Systems // 2012 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Vilamoura, 2012. P.~573--580.
+
+\bibitem{zhang} Zhang Z., Scaramuzza D. A Tutorial on Quantitative Trajectory Evaluation for Visual(-Inertial) Odometry // 2018 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Madrid, 2018. P.~7244--7251.
+
+\bibitem{epifanov} Епифанов К.А. Исследование алгоритмов замыкания цикла в лидарной одометрии // Искусственный интеллект в промышленных, коммерческих, медицинских и финансовых приложениях: сб. ст. науч.-техн. семинара. Вып.~3 / под ред. А.Р.~Ефимова. М.: НИТУ «МИСИС», 2025. С.~57--61.
+
+\bibitem{ermolenko} Ермоленко И.Д. Анализ эффективности методов стереозрения для восстановления 3D-облака точек по карте диспаритета // Искусственный интеллект в промышленных, коммерческих, медицинских и финансовых приложениях: сб. ст. науч.-техн. семинара. М.: НИТУ «МИСИС», 2026. С.~34.
+
+\bibitem{furgale} Furgale P., Rehder J., Siegwart R. Unified Temporal and Spatial Calibration for Multi-Sensor Systems // 2013 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Tokyo, 2013. P.~1280--1286.
+
+\bibitem{lovegrove} Lovegrove S., Patron-Perez A., Sibley G. Spline Fusion: A Continuous-Time Representation for Visual-Inertial Fusion with Application to Rolling Shutter Cameras // Proceedings of the British Machine Vision Conference (BMVC). Bristol, 2013.
+
+\bibitem{patronperez} Patron-Perez A., Lovegrove S., Sibley G. A Spline-Based Trajectory Representation for Sensor Fusion and Rolling Shutter Cameras // International Journal of Computer Vision. 2015. Vol.~113, No.~3. P.~208--219. DOI: 10.1007/s11263-015-0811-3.
+
+\bibitem{kim} Kim M.-J., Kim M.-S., Shin S.Y. A General Construction Scheme for Unit Quaternion Curves with Simple High Order Derivatives // Proceedings of the 22nd Annual Conference on Computer Graphics and Interactive Techniques (SIGGRAPH~'95). 1995. P.~369--376.
+
+\bibitem{mueggler} Mueggler E., Gallego G., Rebecq H., Scaramuzza D. Continuous-Time Visual-Inertial Odometry for Event Cameras // IEEE Transactions on Robotics. 2018. Vol.~34, No.~6. P.~1425--1440.
+
+\bibitem{sommer} Sommer C., Usenko V., Schubert D., Demmel N., Cremers D. Efficient Derivative Computation for Cumulative B-Splines on Lie Groups // Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). 2020. DOI: 10.1109/CVPR42600.2020.01116.
+
+\bibitem{sola} Solà J. Quaternion Kinematics for the Error-State Kalman Filter // arXiv preprint arXiv:1711.02508. 2017.
+
+\bibitem{ly} Ly K.T., Semenov V., Risiglione M., Merkt W., Havoutis I. R-LGP: A Reachability-guided Logic-geometric Programming Framework for Optimal Task and Motion Planning on Mobile Manipulators // 2024 IEEE International Conference on Robotics and Automation (ICRA). Yokohama, 2024. P.~14917--14923. DOI: 10.1109/ICRA57147.2024.10611389.
+
+\bibitem{forster} Forster C., Carlone L., Dellaert F., Scaramuzza D. On-Manifold Preintegration for Real-Time Visual-Inertial Odometry // IEEE Transactions on Robotics. 2017. Vol.~33, No.~1. P.~1--21.
+
+\bibitem{ieee952} IEEE Std 952-1997. IEEE Standard Specification Format Guide and Test Procedure for Single-Axis Interferometric Fiber Optic Gyros. New York: IEEE, 1997.
 
 \end{thebibliography}
 
