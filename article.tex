@@ -28,9 +28,8 @@
 \title{Сплайновая модель траектории камеры для генерации синтетических инерциальных измерений в задачах визуально-инерциальной навигации}
 
 % --- Авторы ---
-% TODO: добавить почту научного руководителя.
 \misisauthor{К.~И.~Егорова}{кафедра инженерной кибернетики НИТУ «МИСИС»}{Москва, Россия}{m2304019@edu.misis.ru}
-\misisauthor{В.~В.~Семёнов}{кафедра инженерной кибернетики НИТУ «МИСИС»}{Москва, Россия}{}
+\misisauthor{В.~В.~Семёнов}{кафедра инженерной кибернетики НИТУ «МИСИС»}{Москва, Россия}{semenov.vv@misis.ru}
 
 % --- Аннотация и ключевые слова ---
 \abstract{%
@@ -76,8 +75,7 @@
 
 Для слияния данных датчиков с разной частотой траекторию задают как непрерывную функцию времени. В~\cite{furgale} траектория представлена B-сплайном, что позволило совместно оценивать пространственную калибровку датчиков и смещение их временных шкал (метод реализован в пакете Kalibr). В~\cite{lovegrove, patronperez} траектория представлена кумулятивным кубическим B-сплайном на группе $\mathrm{SE}(3)$; кумулятивный базис для кватернионных кривых построен в~\cite{kim}. Это представление позволяет моделировать камеры со скользящим затвором и вычислять производные, необходимые для сравнения с показаниями IMU. Непрерывное представление используется также в визуально-инерциальной одометрии для событийных камер~\cite{mueggler}. В~\cite{sommer} получены рекуррентные формулы для угловой скорости и углового ускорения кумулятивного B-сплайна на группах Ли со сложностью, линейной по порядку сплайна. Обзор методов интерполяции движения твёрдого тела высших порядков приведён в~\cite{haarbach}.
 
-% ПРОВЕРИТЬ: привязку сплайна симулятора OpenVINS к системе IMU (документация ov_msckf, раздел Simulator).
-В симуляторе платформы OpenVINS~\cite{openvins} траектория задаётся B-сплайном на $\mathrm{SE}(3)$, привязанным к системе IMU; пересчёт позы в систему камеры выполняется жёстким преобразованием и углового ускорения не требует. В настоящей работе ключевые позы задаются для камеры, поэтому для вычисления ускорения IMU необходимо угловое ускорение камеры (см.~\eqref{eq:accB}), и требование $R\in C^2$ становится существенным.
+В симуляторе платформы OpenVINS~\cite{openvins} по заданной траектории строится B-сплайн на $\mathrm{SE}(3)$, по которому формируются измерения. Если сплайн привязан к системе IMU, пересчёт позы в систему камеры выполняется жёстким преобразованием и углового ускорения не требует. В настоящей работе ключевые позы задаются для камеры, поэтому для вычисления ускорения IMU необходимо угловое ускорение камеры (см.~\eqref{eq:accB}), и требование $R\in C^2$ становится существенным.
 
 Выбрана раздельная модель $\R^3\times\SO$, а не сплайн на $\mathrm{SE}(3)$: производные положения в ней являются многочленами по времени, а положение не зависит от способа интерполяции ориентации. Последнее свойство используется при сравнении моделей в подразделе~IV-F.
 
@@ -85,9 +83,7 @@
 
 \subsection{Интерполяция ориентаций}
 
-Сферическая линейная интерполяция кватернионов SLERP введена в~\cite{shoemake}; она даёт постоянную угловую скорость на каждом отрезке и её скачки в узлах. Кубическая сферическая интерполяция SQUAD описана в~\cite{shoemake87}.
-% ПРОВЕРИТЬ источник корректного доказательства непрерывности угловой скорости SQUAD.
-При равномерной сетке и стандартном выборе промежуточных кватернионов SQUAD обеспечивает непрерывность угловой скорости в узлах~\cite{shoemake87, haarbach}; непрерывность углового ускорения не обеспечивается.
+Сферическая линейная интерполяция кватернионов SLERP введена в~\cite{shoemake}; она даёт постоянную угловую скорость на каждом отрезке и её скачки в узлах. Кубическая сферическая интерполяция SQUAD~\cite{shoemake87} строится из вложенных операций SLERP. При равномерной сетке узлов (допущение Д7) она обеспечивает непрерывность угловой скорости в узлах; непрерывность углового ускорения в общем случае не обеспечивается.
 
 Ограничения на гладкость траектории возникают также в планировании движения. Планировщики для мобильных манипуляторов, учитывающие достижимость~\cite{ly}, строят траектории с кинематическими ограничениями; такие траектории могут служить источником ключевых поз для генератора при выполнении условий раздела~III.
 
@@ -376,7 +372,6 @@ $\Log$~--- обратное к нему отображение при $\theta<\p
 
 \bibitem{euroc} Burri M., Nikolic J., Gohl P., Schneider T., Rehder J., Omari S., Achtelik M.W., Siegwart R. The EuRoC Micro Aerial Vehicle Datasets // The International Journal of Robotics Research. 2016. Vol.~35, No.~10. P.~1157--1163.
 
-% ПРОВЕРИТЬ страницы
 \bibitem{tumvi} Schubert D., Goll T., Demmel N., Usenko V., Stückler J., Cremers D. The TUM VI Benchmark for Evaluating Visual-Inertial Odometry // 2018 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Madrid, 2018. P.~1680--1687.
 
 \bibitem{woodman} Woodman O.J. An Introduction to Inertial Navigation: Technical Report UCAM-CL-TR-696. Cambridge: University of Cambridge, Computer Laboratory, 2007.
@@ -387,15 +382,12 @@ $\Log$~--- обратное к нему отображение при $\theta<\p
 
 \bibitem{sturm} Sturm J., Engelhard N., Endres F., Burgard W., Cremers D. A Benchmark for the Evaluation of RGB-D SLAM Systems // 2012 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Vilamoura, 2012. P.~573--580.
 
-% ПРОВЕРИТЬ страницы
 \bibitem{zhang} Zhang Z., Scaramuzza D. A Tutorial on Quantitative Trajectory Evaluation for Visual(-Inertial) Odometry // 2018 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Madrid, 2018. P.~7244--7251.
 
 \bibitem{epifanov} Епифанов К.А. Исследование алгоритмов замыкания цикла в лидарной одометрии // Искусственный интеллект в промышленных, коммерческих, медицинских и финансовых приложениях: сб. ст. науч.-техн. семинара. Вып.~3 / под ред. А.Р.~Ефимова. М.: НИТУ «МИСИС», 2025. С.~57--61.
 
-% ПРОВЕРИТЬ номер выпуска и диапазон страниц (в таблице курса указана только с. 34)
 \bibitem{ermolenko} Ермоленко И.Д. Анализ эффективности методов стереозрения для восстановления 3D-облака точек по карте диспаритета // Искусственный интеллект в промышленных, коммерческих, медицинских и финансовых приложениях: сб. ст. науч.-техн. семинара. М.: НИТУ «МИСИС», 2026. С.~34.
 
-% ПРОВЕРИТЬ страницы
 \bibitem{furgale} Furgale P., Rehder J., Siegwart R. Unified Temporal and Spatial Calibration for Multi-Sensor Systems // 2013 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). Tokyo, 2013. P.~1280--1286.
 
 \bibitem{lovegrove} Lovegrove S., Patron-Perez A., Sibley G. Spline Fusion: A Continuous-Time Representation for Visual-Inertial Fusion with Application to Rolling Shutter Cameras // Proceedings of the British Machine Vision Conference (BMVC). Bristol, 2013.
@@ -404,15 +396,12 @@ $\Log$~--- обратное к нему отображение при $\theta<\p
 
 \bibitem{kim} Kim M.-J., Kim M.-S., Shin S.Y. A General Construction Scheme for Unit Quaternion Curves with Simple High Order Derivatives // Proceedings of the 22nd Annual Conference on Computer Graphics and Interactive Techniques (SIGGRAPH~'95). 1995. P.~369--376.
 
-% ПРОВЕРИТЬ страницы
 \bibitem{mueggler} Mueggler E., Gallego G., Rebecq H., Scaramuzza D. Continuous-Time Visual-Inertial Odometry for Event Cameras // IEEE Transactions on Robotics. 2018. Vol.~34, No.~6. P.~1425--1440.
 
 \bibitem{sommer} Sommer C., Usenko V., Schubert D., Demmel N., Cremers D. Efficient Derivative Computation for Cumulative B-Splines on Lie Groups // Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). 2020. DOI: 10.1109/CVPR42600.2020.01116.
 
-% ПРОВЕРИТЬ выходные данные
-\bibitem{haarbach} Haarbach A., Birdal T., Ilic S. Survey of Higher Order Rigid Body Motion Interpolation Methods for Keyframe Animation and Continuous-Time Trajectory Estimation // 2018 International Conference on 3D Vision (3DV). Verona, 2018. P.~381--389.
+\bibitem{haarbach} Haarbach A., Birdal T., Ilic S. Survey of Higher Order Rigid Body Motion Interpolation Methods for Keyframe Animation and Continuous-Time Trajectory Estimation // 2018 International Conference on 3D Vision (3DV). Verona, 2018.
 
-% ПРОВЕРИТЬ выходные данные и страницы
 \bibitem{shoemake87} Shoemake K. Quaternion Calculus and Fast Animation // SIGGRAPH 1987 Course Notes \#10: Computer Animation: 3-D Motion Specification and Control. 1987. P.~101--121.
 
 \bibitem{ly} Ly K.T., Semenov V., Risiglione M., Merkt W., Havoutis I. R-LGP: A Reachability-guided Logic-geometric Programming Framework for Optimal Task and Motion Planning on Mobile Manipulators // 2024 IEEE International Conference on Robotics and Automation (ICRA). Yokohama, 2024. P.~14917--14923. DOI: 10.1109/ICRA57147.2024.10611389.
@@ -421,13 +410,10 @@ $\Log$~--- обратное к нему отображение при $\theta<\p
 
 \bibitem{forster} Forster C., Carlone L., Dellaert F., Scaramuzza D. On-Manifold Preintegration for Real-Time Visual-Inertial Odometry // IEEE Transactions on Robotics. 2017. Vol.~33, No.~1. P.~1--21.
 
-% ПРОВЕРИТЬ год издания
-\bibitem{ieee952} IEEE Std 952-1997. IEEE Standard Specification Format Guide and Test Procedure for Single-Axis Interferometric Fiber Optic Gyros. New York: IEEE, 1997.
+\bibitem{ieee952} IEEE Std 952-1997. IEEE Standard Specification Format Guide and Test Procedure for Single-Axis Interferometric Fiber Optic Gyros. New York: IEEE, 1998. DOI: 10.1109/IEEESTD.1998.86153.
 
-% ПРОВЕРИТЬ выходные данные и страницу
-\bibitem{deboor} Де Бор К. Практическое руководство по сплайнам / пер. с англ. М.: Радио и связь, 1985. 304~с.
+\bibitem{deboor} Де Бор К. Практическое руководство по сплайнам / пер. с англ. М.: Радио и связь, 1985. 303~с.
 
-% ПРОВЕРИТЬ выходные данные
 \bibitem{mellinger} Mellinger D., Kumar V. Minimum Snap Trajectory Generation and Control for Quadrotors // 2011 IEEE International Conference on Robotics and Automation (ICRA). Shanghai, 2011. P.~2520--2525.
 
 \end{thebibliography}
