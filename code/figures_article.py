@@ -10,6 +10,7 @@ sys.path.insert(0, '.')
 from spline_imu import demo_keyframes, ModelA, ModelB, ModelV
 
 OUT = '../out/'
+FIG = '../figures/'
 COL = {'A': '#8a8984', 'B': '#eb6834', 'V': '#2a78d6'}
 INK, INK2, GRID = '#0b0b0b', '#52514e', '#e4e3df'
 plt.rcParams.update({
@@ -36,7 +37,7 @@ ax.set_ylabel(r'$\alpha_{C,x}$, рад/с$^2$')
 ax.legend(loc='upper left', ncol=3, fontsize=7, handlelength=1.4,
           columnspacing=1.0, bbox_to_anchor=(0.0, 1.13))
 fig.tight_layout(pad=0.3)
-fig.savefig(OUT + 'article_alpha.pdf')
+fig.savefig(FIG + 'alpha.pdf')
 plt.close(fig)
 
 # --- сходимость ---
@@ -81,6 +82,6 @@ ax.spines['bottom'].set_bounds(40, 1600)
 ax.set_xlabel('$f$, Гц')
 ax.set_ylabel('СКО $e_p$, м')
 fig.tight_layout(pad=0.3)
-fig.savefig(OUT + 'article_convergence.pdf')
+fig.savefig(FIG + 'convergence.pdf')
 plt.close(fig)
 print('ok')
