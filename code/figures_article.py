@@ -22,11 +22,11 @@ plt.rcParams.update({
 W = 3.35
 
 kf = demo_keyframes()
-models = {'A': ModelA(kf), 'B': ModelB(kf), 'V': ModelV(kf)}
+models = {'A': ModelA(kf), 'B': ModelB(kf), 'V': ModelV(kf, refine=True)}
 t = np.linspace(0.0005, 9.9995, 8000)
 
 # --- угловое ускорение по оси x ---
-fig, ax = plt.subplots(figsize=(W, 1.9))
+fig, ax = plt.subplots(figsize=(W, 1.7))
 for k, lab in (('A', 'А'), ('B', 'Б'), ('V', 'В')):
     al = models[k].eval(t)[4][:, 0]
     ax.plot(t, al, color=COL[k], label=lab, lw=1.0 if k == 'A' else 1.2)
@@ -41,7 +41,7 @@ fig.savefig(FIG + 'alpha.pdf')
 plt.close(fig)
 
 # --- сходимость ---
-res = json.load(open(OUT + 'convergence.json'))
+res = json.load(open(OUT + 'convergence_refined.json'))
 
 
 def sel(m, g, s):
@@ -50,11 +50,11 @@ def sel(m, g, s):
     return sorted(rr, key=lambda r: r['f'])
 
 
-fig, ax = plt.subplots(figsize=(W, 2.5))
+fig, ax = plt.subplots(figsize=(W, 2.15))
 series = [('A', 'shifted', 'А', '-', 'o'),
           ('B', 'shifted', 'Б', '-', 'o'),
-          ('V', 'shifted', 'В, сдвиг', '-', 'o'),
-          ('V', 'aligned', 'В, в узлах', '--', 's')]
+          ('V', 'shifted', 'В, сдвинутая', '-', 'o'),
+          ('V', 'aligned', 'В, согласованная', '--', 's')]
 for m, g, lab, ls, mk in series:
     rr = sel(m, g, 'rk4')
     f = np.array([r['f'] for r in rr])
@@ -76,7 +76,7 @@ ax.set_yscale('log')
 ax.xaxis.set_minor_locator(NullLocator())
 ax.set_xticks([50, 100, 200, 400, 800, 1600])
 ax.set_xticklabels(['50', '100', '200', '400', '800', '1600'])
-ax.set_xlim(40, 4200)
+ax.set_xlim(40, 5200)
 ax.set_ylim(1e-13, 3e2)
 ax.spines['bottom'].set_bounds(40, 1600)
 ax.set_xlabel('$f$, Гц')
