@@ -1,16 +1,28 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as Rot
 
-Exp = lambda phi: Rot.from_rotvec(phi).as_matrix()
-Log = lambda R: Rot.from_matrix(R).as_rotvec()
 G_W = np.array([0.0, 0.0, -9.81])
+
+
+def Exp(phi):
+    return Rot.from_rotvec(phi).as_matrix()
+
+
+def Log(R):
+    return Rot.from_matrix(R).as_rotvec()
+
 
 def cum_basis(u):
     """Кумулятивный базис и его производные по u."""
-    B   = np.array([(5 + 3*u - 3*u**2 + u**3) / 6, (1 + 3*u + 3*u**2 - 2*u**3) / 6, u**3 / 6])
-    dB  = np.array([(3 - 6*u + 3*u**2) / 6, (3 + 6*u - 6*u**2) / 6, u**2 / 2])
+    B = np.array([(5 + 3*u - 3*u**2 + u**3) / 6,
+                  (1 + 3*u + 3*u**2 - 2*u**3) / 6,
+                  u**3 / 6])
+    dB = np.array([(3 - 6*u + 3*u**2) / 6,
+                   (3 + 6*u - 6*u**2) / 6,
+                   u**2 / 2])
     ddB = np.array([u - 1, 1 - 2*u, u])
     return B, dB, ddB
+
 
 def rotation_spline(Q, t, t0, dt):
     """R, omega, alpha кумулятивного B-сплайна на SO(3) в момент t."""
@@ -29,9 +41,12 @@ def rotation_spline(Q, t, t0, dt):
         R = R @ A
     return R, om, al
 
+
 def ideal_imu(R_wc, acc_wc, om_c, al_c, R_bc, r):
-    """Идеальные показания IMU по движению камеры; r — положение IMU в системе камеры."""
-    acc_wb = acc_wc + R_wc @ (np.cross(al_c, r) + np.cross(om_c, np.cross(om_c, r)))
+    """Идеальные показания IMU по движению камеры.
+    r -- положение IMU в системе камеры."""
+    lever = np.cross(al_c, r) + np.cross(om_c, np.cross(om_c, r))
+    acc_wb = acc_wc + R_wc @ lever
     R_wb = R_wc @ R_bc.T
     gyro = R_bc @ om_c
     accel = R_wb.T @ (acc_wb - G_W)

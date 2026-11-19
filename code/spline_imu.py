@@ -84,10 +84,14 @@ class Keyframes:
         self.K = len(p) - 1
         self.tK = t0 + self.K * dt
 
-    def seg(self, t):
-        """Номер отрезка i и локальный параметр u в [0, 1]."""
+    def seg(self, t, ref=None):
+        """Номер отрезка i и локальный параметр u (u в [0, 1) внутри отрезка).
+        Если задан ref, отрезок берётся по моментам ref, а u считается для t:
+        так формула отрезка продолжается за его границу (нужно для пределов
+        слева и справа в узле)."""
         x = (np.asarray(t, float) - self.t0) / self.dt
-        i = np.clip(np.floor(x).astype(int), 0, self.K - 1)
+        xr = x if ref is None else (np.asarray(ref, float) - self.t0) / self.dt
+        i = np.clip(np.floor(xr).astype(int), 0, self.K - 1)
         return i, x - i
 
 
@@ -123,10 +127,10 @@ class ModelV:
         self.Q = np.concatenate([Q0[None], R, QK2[None]])     # Q_0..Q_{K+2}
         self.d = Log(np.swapaxes(self.Q[:-1], -1, -2) @ self.Q[1:])
 
-    def eval(self, t):
+    def eval(self, t, ref=None):
         kf = self.kf
         t = np.atleast_1d(t)
-        i, u = kf.seg(t)
+        i, u = kf.seg(t, ref)
         dt = kf.dt
         C = np.stack([self.c[i + j] for j in range(4)], axis=-1)    # (N,3,4)
         psi = lambda a, b, c_, d: np.stack([a, b, c_, d], -1)[..., None]
@@ -155,11 +159,11 @@ def slerp(P, Q, u):
     return P @ Exp(u[..., None] * Log(np.swapaxes(P, -1, -2) @ Q))
 
 
-def numeric_rates(Rfun, t, eps=1e-3):
+def numeric_rates(Rfun, t, eps=1e-3, seg=None):
     """omega, alpha в собственной системе по 5-точечным разностям.
     Rfun(t, seg) вычисляет поворот по формуле отрезка seg (гладкое продолжение
     за его границы), поэтому шаблон не перескакивает через узел."""
-    kf_seg = Rfun.seg_of(t)
+    kf_seg = Rfun.seg_of(t) if seg is None else seg
 
     def omega_at(tt):
         offs = np.array([-2, -1, 1, 2]) * eps
@@ -181,10 +185,10 @@ class ModelA:
     def __init__(self, kf):
         self.kf = kf
 
-    def eval(self, t):
+    def eval(self, t, ref=None):
         kf = self.kf
         t = np.atleast_1d(t)
-        i, u = kf.seg(t)
+        i, u = kf.seg(t, ref)
         p = kf.p[i] + u[:, None] * (kf.p[i + 1] - kf.p[i])
         acc = np.zeros_like(p)                       # внутри отрезка p'' = 0
         d = Log(np.swapaxes(kf.R[i], -1, -2) @ kf.R[i + 1])
@@ -220,13 +224,16 @@ class ModelB:
         Rfun.seg_of = lambda tt: kf.seg(tt)[0]
         self.Rfun = Rfun
 
-    def eval(self, t):
+    def eval(self, t, ref=None):
         t = np.atleast_1d(t)
-        i, _ = self.kf.seg(t)
+        i, _ = self.kf.seg(t, ref)
         Rm = self.Rfun(t, i)
-        p = self.cs(t)
-        acc = self.cs(t, 2)
-        om, al = numeric_rates(self.Rfun, t)
+        # кусочный многочлен отрезка i (а не того, куда попало t)
+        x = t[:, None] - self.cs.x[i][:, None]
+        c = self.cs.c[:, i, :]                       # (4, N, 3)
+        p = ((c[0] * x + c[1]) * x + c[2]) * x + c[3]
+        acc = 6 * c[0] * x + 2 * c[1]
+        om, al = numeric_rates(self.Rfun, t, seg=i)
         return Rm, p, acc, om, al
 
 
@@ -237,8 +244,8 @@ class Rig:
         self.p_BC = np.asarray(p_BC)
         self.r = -self.R_BC.T @ self.p_BC           # положение IMU в системе C
 
-    def imu_state(self, model, t):
-        Rwc, pwc, awc, omc, alc = model.eval(t)
+    def imu_state(self, model, t, ref=None):
+        Rwc, pwc, awc, omc, alc = model.eval(t, ref)
         r = self.r
         Rwb = Rwc @ self.R_BC.T
         pwb = pwc + (Rwc @ r)
@@ -247,8 +254,8 @@ class Rig:
         omb = (self.R_BC @ omc[..., None])[..., 0]
         return Rwb, pwb, awb, omb
 
-    def ideal_imu(self, model, t):
-        Rwb, _, awb, omb = self.imu_state(model, t)
+    def ideal_imu(self, model, t, ref=None):
+        Rwb, _, awb, omb = self.imu_state(model, t, ref)
         f = (np.swapaxes(Rwb, -1, -2) @ (awb - G_W)[..., None])[..., 0]
         return omb, f
 
@@ -307,6 +314,28 @@ def integrate_rk4(R0, v0, p0, om_half, acc_half, h):
     return RR, P
 
 
+def integrate_rk4_lr(R0, v0, p0, om_half, acc_half, om_left, acc_left, h):
+    """РК4, где последняя стадия шага берёт предел слева (om_left, acc_left)."""
+    n = (len(om_half) - 1) // 2 + 1
+    R, v, p = R0.copy(), v0.copy(), p0.copy()
+    P = np.empty((n, 3)); RR = np.empty((n, 3, 3))
+    P[0], RR[0] = p, R
+    for s in range(n - 1):
+        k0, k1, k2 = 2 * s, 2 * s + 1, 2 * s + 2
+        dR1, dv1, dp1 = R @ hat(om_half[k0]), R @ acc_half[k0] + G_W, v
+        R2, v2 = R + 0.5*h*dR1, v + 0.5*h*dv1
+        dR2, dv2, dp2 = R2 @ hat(om_half[k1]), R2 @ acc_half[k1] + G_W, v2
+        R3, v3 = R + 0.5*h*dR2, v + 0.5*h*dv2
+        dR3, dv3, dp3 = R3 @ hat(om_half[k1]), R3 @ acc_half[k1] + G_W, v3
+        R4, v4 = R + h*dR3, v + h*dv3
+        dR4, dv4, dp4 = R4 @ hat(om_left[k2]), R4 @ acc_left[k2] + G_W, v4
+        R = polar(R + h/6 * (dR1 + 2*dR2 + 2*dR3 + dR4))
+        v = v + h/6 * (dv1 + 2*dv2 + 2*dv3 + dv4)
+        p = p + h/6 * (dp1 + 2*dp2 + 2*dp3 + dp4)
+        P[s + 1], RR[s + 1] = p, R
+    return RR, P
+
+
 def imu_velocity(rig, model, t, eps=1e-3):
     """Скорость IMU в начальный момент: 5-точечная разность по формуле отрезка
     (нужна только для начального условия; погрешность ~1e-13 м/с)."""
@@ -322,9 +351,12 @@ def imu_velocity(rig, model, t, eps=1e-3):
     return sum(wk * pk for wk, pk in zip(w, pts))
 
 
-def run_consistency(rig, model, t_start, t_end, h, scheme):
+def run_consistency(rig, model, t_start, t_end, h, scheme, left_limit=False):
     """Интегрирует идеальные показания модели и сравнивает с её же траекторией.
-    Возвращает RMS ошибки положения [м] и ориентации [рад]."""
+    Возвращает RMS ошибки положения [м] и ориентации [рад].
+    left_limit=True (только РК4): в конце шага берётся значение по формуле того
+    отрезка, где лежит середина шага, то есть предел слева в узле. Реальный
+    датчик так не умеет: в каждый момент у него одно показание."""
     n = int(round((t_end - t_start) / h)) + 1
     s = t_start + h * np.arange(n)
     Rwb, pwb, _, _ = rig.imu_state(model, s)
@@ -335,7 +367,14 @@ def run_consistency(rig, model, t_start, t_end, h, scheme):
     else:
         s2 = t_start + (h / 2) * np.arange(2 * n - 1)
         om, ac = rig.ideal_imu(model, s2)
-        RR, P = integrate_rk4(Rwb[0], v0, pwb[0], om, ac, h)
+        if left_limit:
+            ends = s2[2::2]
+            om_e, ac_e = rig.ideal_imu(model, ends, ref=ends - h / 2)
+            om_l, ac_l = om.copy(), ac.copy()
+            om_l[2::2], ac_l[2::2] = om_e, ac_e
+            RR, P = integrate_rk4_lr(Rwb[0], v0, pwb[0], om, ac, om_l, ac_l, h)
+        else:
+            RR, P = integrate_rk4(Rwb[0], v0, pwb[0], om, ac, h)
     ep = np.linalg.norm(P - pwb, axis=1)
     eR = np.linalg.norm(Log(np.swapaxes(RR, -1, -2) @ Rwb), axis=1)
     return np.sqrt(np.mean(ep**2)), np.sqrt(np.mean(eR**2))
