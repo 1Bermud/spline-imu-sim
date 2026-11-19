@@ -1,8 +1,11 @@
 import numpy as np, sys, json, time
 sys.path.insert(0, '.')
 from spline_imu import *
+# python convergence.py            -- модель В с начальным приближением (как на Хабре)
+# python convergence.py --refined  -- модель В после уточнения (задача 1, статья)
+REFINED = '--refined' in sys.argv
 kf = demo_keyframes(); rig = demo_rig()
-models = {'A': ModelA(kf), 'B': ModelB(kf), 'V': ModelV(kf)}
+models = {'A': ModelA(kf), 'B': ModelB(kf), 'V': ModelV(kf, refine=REFINED)}
 freqs = [50, 100, 200, 400, 800, 1600]
 res = []
 T0 = time.time()
@@ -24,4 +27,5 @@ for name in ('B', 'V'):
         ep, eR = run_consistency(rig, models[name], 0.0, te, h, 'rk4', left_limit=True)
         res.append(dict(model=name, grid='aligned', scheme='rk4_left', f=f, ep=ep, eR=eR))
         print(name, 'aligned rk4_left', f, '%.3e %.3e' % (ep, eR), flush=True)
-json.dump(res, open('../out/convergence.json', 'w'), indent=1)
+out = '../out/convergence_refined.json' if REFINED else '../out/convergence.json'
+json.dump(res, open(out, 'w'), indent=1)

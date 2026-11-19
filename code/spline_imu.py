@@ -77,10 +77,13 @@ M_POS = np.array([[1, -3, 3, -1],
 class Keyframes:
     """Ключевые позы камеры на равномерной сетке t_k = t0 + k*dt."""
 
-    def __init__(self, t0, dt, R, p, v0, vK):
+    def __init__(self, t0, dt, R, p, v0, vK, w0=None, wK=None):
         self.t0, self.dt = t0, dt
         self.R, self.p = np.asarray(R), np.asarray(p)
         self.v0, self.vK = np.asarray(v0), np.asarray(vK)
+        # угловые скорости камеры на концах (в её системе), нужны для уточнения
+        self.w0 = None if w0 is None else np.asarray(w0)
+        self.wK = None if wK is None else np.asarray(wK)
         self.K = len(p) - 1
         self.tK = t0 + self.K * dt
 
@@ -99,7 +102,7 @@ class Keyframes:
 class ModelV:
     name = "V"
 
-    def __init__(self, kf):
+    def __init__(self, kf, refine=False):
         self.kf = kf
         K, dt = kf.K, kf.dt
         # контрольные точки c_1..c_{K+1}: трёхдиагональная система (IV-C)
@@ -126,6 +129,50 @@ class ModelV:
         QK2 = R[-1] @ Exp(Log(R[-2].T @ R[-1]))
         self.Q = np.concatenate([Q0[None], R, QK2[None]])     # Q_0..Q_{K+2}
         self.d = Log(np.swapaxes(self.Q[:-1], -1, -2) @ self.Q[1:])
+        self.refine_info = None
+        if refine:
+            self.refine()
+
+    def _set_Q(self, Q):
+        self.Q = Q
+        self.d = Log(np.swapaxes(Q[:-1], -1, -2) @ Q[1:])
+
+    def key_residuals(self):
+        """Невязки по ключевым вращениям [рад] и угловым скоростям на концах."""
+        kf = self.kf
+        tk = kf.t0 + kf.dt * np.arange(kf.K + 1)
+        ref = np.minimum(tk, kf.tK - 0.5 * kf.dt)     # t_K -- конец отрезка K-1
+        Rm, _, _, om, _ = self.eval(tk, ref)
+        r_rot = Log(np.swapaxes(kf.R, -1, -2) @ Rm)
+        return r_rot, om[0], om[-1]
+
+    def refine(self):
+        """Задача 1 для ориентации: K+1 условий R(t_k)=R_k и два условия на
+        угловую скорость на концах (как v_0, v_K для положения). Неизвестных
+        3(K+3), уравнений столько же; решается методом Левенберга-Марквардта."""
+        from scipy.optimize import least_squares
+        kf = self.kf
+        if kf.w0 is None or kf.wK is None:
+            raise ValueError("для уточнения нужны угловые скорости на концах")
+        Q_init = self.Q.copy()
+
+        def fun(x):
+            self._set_Q(Q_init @ Exp(x.reshape(-1, 3)))
+            r_rot, w0, wK = self.key_residuals()
+            return np.concatenate([r_rot.ravel(), kf.dt * (w0 - kf.w0),
+                                   kf.dt * (wK - kf.wK)])
+
+        r0 = fun(np.zeros(3 * len(Q_init)))
+        sol = least_squares(fun, np.zeros(3 * len(Q_init)), method='lm',
+                            xtol=1e-15, ftol=1e-15, gtol=1e-15)
+        fun(sol.x)
+        r_rot, w0, wK = self.key_residuals()
+        self.refine_info = dict(
+            init_max_rot=float(np.linalg.norm(r0[:3 * (kf.K + 1)].reshape(-1, 3), axis=1).max()),
+            max_rot=float(np.linalg.norm(r_rot, axis=1).max()),
+            max_w_end=float(max(np.linalg.norm(w0 - kf.w0), np.linalg.norm(wK - kf.wK))),
+            nfev=int(sol.nfev), status=int(sol.status))
+        return self.refine_info
 
     def eval(self, t, ref=None):
         kf = self.kf
@@ -392,11 +439,20 @@ def demo_keyframes(K=20, dt=0.5):
     def rotvec(t):
         return np.stack([0.15*np.sin(0.9*t), 0.2*np.sin(0.7*t), 0.6*np.sin(0.3*t)], -1)
 
+    def body_rate(t, eps=1e-3):
+        """Угловая скорость Exp(rotvec(t)) в собственной системе (5-точечная
+        разность по аналитической функции, погрешность ~1e-13)."""
+        offs = np.array([-2, -1, 1, 2]) * eps
+        w = np.array([1, -8, 8, -1]) / (12 * eps)
+        Rd = sum(wk * Exp(rotvec(t + o)) for wk, o in zip(w, offs))
+        return vee(Exp(rotvec(t)).T @ Rd)
+
     tk = dt * np.arange(K + 1)
     R = Exp(rotvec(tk))
-    return Keyframes(0.0, dt, R, pos(tk), vel(tk[0]), vel(tk[-1]))
+    return Keyframes(0.0, dt, R, pos(tk), vel(tk[0]), vel(tk[-1]),
+                     body_rate(tk[0]), body_rate(tk[-1]))
 
 
 def demo_rig():
-    """Камера смещена относительно IMU на ~9 см и повёрнута на 10° по рысканию."""
+    """Камера смещена относительно IMU на 8,5 см и повёрнута на 10° по рысканию."""
     return Rig(Exp(np.array([0.0, 0.0, np.deg2rad(10)])), np.array([0.08, 0.0, 0.03]))
